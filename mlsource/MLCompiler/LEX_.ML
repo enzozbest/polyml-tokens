@@ -582,29 +582,150 @@ struct
         if (!sy = Othersy) then parseToken state else ()
     end; (* parseToken *)
 
+    
+     (* ============ TOKEN EXPORT INSTRUMENTATION ============ *)
+    val tokenDir = "tokens"
+    
+    fun ensureTokenDir () : unit =
+        if OS.FileSys.access (tokenDir, []) then ()
+        else OS.FileSys.mkDir tokenDir
+        handle _ => ();
+    
+    fun shouldExport () : bool =
+        Option.isSome (OS.Process.getEnv "POLYML_EXPORT_TOKENS")
+        handle _ => false;
+    
+    fun tokenOutputFile () : string =
+    let
+        val baseName = case OS.Process.getEnv "POLYML_TOKEN_FILE" of
+            SOME name => name
+          | NONE => "unknown"
+    in
+        tokenDir ^ "/" ^ baseName ^ "-tokens.tok"
+    end;
+        
+    (* Convert token to a better format *)
+    fun tokenRepr (sym: sys, text: string) : string =
+        case sym of
+        (* Tokens with payload - need the text *)
+          Ident         => "T_ID(" ^ text ^ ")"
+        | TypeIdent     => "T_TYVAR(" ^ text ^ ")"
+        | StringConst   => "T_STRING(" ^ text ^ ")"
+        | IntegerConst  => "T_INT(" ^ text ^ ")"
+        | RealConst     => "T_REAL(" ^ text ^ ")"
+        | WordConst     => "T_WORD(" ^ text ^ ")"
+        | CharConst     => "T_CHAR(" ^ text ^ ")"
+        (* Keywords *)
+        | AbstypeSy     => "T_KEYWORD(abstype)"
+        | AndSy         => "T_KEYWORD(and)"
+        | AndalsoSy     => "T_KEYWORD(andalso)"
+        | AsSy          => "T_KEYWORD(as)"
+        | CaseSy        => "T_KEYWORD(case)"
+        | DatatypeSy    => "T_KEYWORD(datatype)"
+        | DoSy          => "T_KEYWORD(do)"
+        | ElseSy        => "T_KEYWORD(\"else\")"
+        | EndSy         => "T_KEYWORD(\"end\")"
+        | ExceptionSy   => "T_KEYWORD(exception)"
+        | FnSy          => "T_KEYWORD(fn)"
+        | FunSy         => "T_KEYWORD(fun)"
+        | HandleSy      => "T_KEYWORD(handle)"
+        | IfSy          => "T_KEYWORD(if)"
+        | InSy          => "T_KEYWORD(in)"
+        | InfixSy       => "T_KEYWORD(infix)"
+        | InfixrSy      => "T_KEYWORD(infixr)"
+        | LetSy         => "T_KEYWORD(let)"
+        | LocalSy       => "T_KEYWORD(local)"
+        | NonfixSy      => "T_KEYWORD(nonfix)"
+        | OfSy          => "T_KEYWORD(of)"
+        | OpSy          => "T_KEYWORD(op)"
+        | OpenSy        => "T_KEYWORD(open)"
+        | OrelseSy      => "T_KEYWORD(orelse)"
+        | RaiseSy       => "T_KEYWORD(raise)"
+        | RecSy         => "T_KEYWORD(rec)"
+        | ThenSy        => "T_KEYWORD(then)"
+        | TypeSy        => "T_KEYWORD(type)"
+        | ValSy         => "T_KEYWORD(val)"
+        | WithSy        => "T_KEYWORD(with)"
+        | WhileSy       => "T_KEYWORD(while)"
+        (* Module keywords *)
+        | StructureSy   => "T_KEYWORD(structure)"
+        | SignatureSy   => "T_KEYWORD(signature)"
+        | StructSy      => "T_KEYWORD(struct)"
+        | SigSy         => "T_KEYWORD(sig)"
+        | SharingSy     => "T_KEYWORD(sharing)"
+        | FunctorSy     => "T_KEYWORD(functor)"
+        | WithtypeSy    => "T_KEYWORD(withtype)"
+        | EqtypeSy      => "T_KEYWORD(eqtype)"
+        | IncludeSy     => "T_KEYWORD(include)"
+        | WhereSy       => "T_KEYWORD(where)"
+        (* Punctuation *)
+        | LeftParen     => "T_LPAREN"
+        | RightParen    => "T_RPAREN"
+        | LeftBrack     => "T_LBRACK"
+        | RightBrack    => "T_RBRACK"
+        | LeftCurly     => "T_LBRACE"
+        | RightCurly    => "T_RBRACE"
+        | Comma         => "T_COMMA"
+        | Colon         => "T_COLON"
+        | Semicolon     => "T_SEMI"
+        | ThickArrow    => "T_DARROW"
+        | Arrow         => "T_ARROW"
+        | VerticalBar   => "T_BAR"
+        | EqualsSign    => "T_EQUALS"
+        | Underline     => "T_WILD"
+        | ThreeDots     => "T_DOTDOTDOT"
+        | ColonGt       => "T_COLONGT"
+        | HashSign      => "T_HASH"
+        | Asterisk      => "T_STAR"
+        (* Special *)
+        | AbortParse    => "T_EOF"
+        | Othersy       => "T_UNKNOWN"
+    ;
+    
+    fun exportToken (state: lexan) : unit =
+        if not (shouldExport ()) then ()
+        else
+        let
+            val sym = !(#sy state)
+            val text = !(#id state)
+        in
+            if sym = AbortParse then ()
+            else
+            let
+                val () = ensureTokenDir ()
+                val outFile = tokenOutputFile ()
+                val outStream = TextIO.openAppend outFile
+                    handle _ => TextIO.openOut outFile
+            in
+                TextIO.output (outStream, tokenRepr (sym, text) ^ "\n");
+                TextIO.closeOut outStream
+            end
+            handle _ => ()
+        end;
+    (* ====================================================== *)
+
     (* Insymbol - exported interface to lexical analyser. *)
     fun insymbol (state as {sy,pushedSym,...}:lexan) =
-    if ! pushedSym <> Othersy then pushedSym := Othersy
-    (* pushedSym is a hack to handle the difficulty of parsing
-       val ('a, 'b) f = ... compared with val (a, b) = ... and the
-       similar fun declarations. 
-       It's also used to handle where type t = int and type ... compared
-       with  where type t = int and S = sig ...*)
-    else
     (
-        if ! sy = AbortParse (* already end-of-file? *)
-        then
+        if ! pushedSym <> Othersy then pushedSym := Othersy
+        else
         (
-            setSymbolStart state;
-            lexError(state, "unexpected end of file encountered");
-            raise InternalError "end of file"
-        )
-        else ();
-      
-        sy := Othersy; (* default - anything unrecognisable *)
-      
-        parseToken state
+            if ! sy = AbortParse
+            then
+            (
+                setSymbolStart state;
+                lexError(state, "unexpected end of file encountered");
+                raise InternalError "end of file"
+            )
+            else ();
+          
+            sy := Othersy;
+          
+            parseToken state
+        );
+        exportToken state
     ); (* insymbol *)
+
 
     fun pushBackSymbol ({pushedSym,...}:lexan, sym) =
     (* TODO: This does not restore the location so parses such as val () = ... get the wrong
