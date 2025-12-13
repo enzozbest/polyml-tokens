@@ -1,0 +1,3 @@
+T_ID(print)
+T_STRING(Hello from SML \n)
+T_SEMI

@@ -1,0 +1,24 @@
+T_KEYWORD(fun)
+T_ID(greet)
+T_ID(name)
+T_EQUALS
+T_STRING(Hello, )
+T_ID(^)
+T_ID(name)
+T_ID(^)
+T_STRING(!\n)
+T_SEMI
+T_KEYWORD(val)
+T_ID(ch)
+T_EQUALS
+T_CHAR(A)
+T_SEMI
+T_KEYWORD(val)
+T_ID(sum)
+T_EQUALS
+T_INT(1)
+T_ID(+)
+T_INT(2)
+T_STAR
+T_INT(3)
+T_SEMI
